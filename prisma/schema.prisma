@@ -1,0 +1,260 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// User profiles
+model Profile {
+  id                   String    @id @db.Uuid
+  email                String    @unique
+  fullName            String?   @map("full_name")
+  role                String?
+  company             String?
+  industry            String?
+  onboardingCompleted Boolean   @default(false) @map("onboarding_completed")
+  linkedinConnected   Boolean   @default(false) @map("linkedin_connected")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  voiceProfiles      VoiceProfile[]
+  contentPosts       ContentPost[]
+  linkedinAccounts   LinkedinAccount[]
+  linkedinPosts      LinkedinPost[]
+  linkedinConnections LinkedinConnection[]
+  linkedinEngagements LinkedinEngagement[]
+  oauthStates        OauthState[]
+
+  @@map("profiles")
+}
+
+// Voice training profiles
+model VoiceProfile {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  writingSamples  Json     @map("writing_samples")
+  analysisData    Json?    @map("analysis_data")
+  confidenceScore Float?   @map("confidence_score")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("voice_profiles")
+}
+
+// Content posts
+model ContentPost {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  title        String?
+  content      String
+  platform     String    @default("linkedin")
+  status       String    @default("draft")
+  scheduledFor DateTime? @map("scheduled_for") @db.Timestamptz
+  publishedAt  DateTime? @map("published_at") @db.Timestamptz
+  platformData Json?     @map("platform_data")
+  performance  Json?
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  user          Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  linkedinPosts LinkedinPost[]
+
+  @@map("content_posts")
+}
+
+// OAuth state management
+model OauthState {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  state     String   @unique
+  userId    String   @map("user_id") @db.Uuid
+  provider  String
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([userId, provider])
+  @@map("oauth_states")
+}
+
+// LinkedIn accounts
+model LinkedinAccount {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String    @unique @map("user_id") @db.Uuid
+  accountId     String    @map("account_id") // LinkedIn's ID
+  accessToken   String    @map("access_token")
+  refreshToken  String?   @map("refresh_token")
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz
+  scope         String?
+  profileData   Json?     @map("profile_data")
+  connectedAt   DateTime  @default(now()) @map("connected_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  isActive      Boolean   @default(true) @map("is_active")
+
+  // Relations
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([accountId])
+  @@index([expiresAt])
+  @@map("linkedin_accounts")
+}
+
+// LinkedIn posts tracking
+model LinkedinPost {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId              String    @map("user_id") @db.Uuid
+  contentPostId       String?   @map("content_post_id") @db.Uuid
+  linkedinPostId      String?   @map("linkedin_post_id") // LinkedIn's URN
+  linkedinActivityId  String?   @map("linkedin_activity_id") // LinkedIn's activity URN
+  content             String
+  status              String    @default("draft") // draft, scheduled, published, failed
+  scheduledFor        DateTime? @map("scheduled_for") @db.Timestamptz
+  publishedAt         DateTime? @map("published_at") @db.Timestamptz
+  linkedinUrl         String?   @map("linkedin_url")
+  performanceData     Json?     @map("performance_data") // likes, comments, shares, views
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  user        Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentPost ContentPost? @relation(fields: [contentPostId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([scheduledFor])
+  @@index([contentPostId])
+  @@map("linkedin_posts")
+}
+
+// LinkedIn connections tracking
+model LinkedinConnection {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId               String    @map("user_id") @db.Uuid
+  linkedinPersonId     String    @map("linkedin_person_id")
+  profileData          Json?     @map("profile_data")
+  connectionType       String    @default("first") @map("connection_type") // first, second, third
+  connectedAt          DateTime? @map("connected_at") @db.Timestamptz
+  relationshipStrength Int       @default(1) @map("relationship_strength") // 1-10 scale
+  lastInteractionAt    DateTime? @map("last_interaction_at") @db.Timestamptz
+  notes                String?
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, linkedinPersonId])
+  @@index([userId])
+  @@index([linkedinPersonId])
+  @@index([relationshipStrength])
+  @@map("linkedin_connections")
+}
+
+// LinkedIn engagement tracking
+model LinkedinEngagement {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String    @map("user_id") @db.Uuid
+  linkedinPostId        String    @map("linkedin_post_id") // The post we engaged with
+  linkedinPostAuthorId  String?   @map("linkedin_post_author_id") // Author of the post
+  engagementType        String    @map("engagement_type") // like, comment, share, connection_request
+  ourContent            String?   @map("our_content") // Our comment text or message content
+  engagementId          String?   @map("engagement_id") // LinkedIn's ID for our engagement
+  status                String    @default("pending") // pending, success, failed
+  engagedAt             DateTime  @default(now()) @map("engaged_at") @db.Timestamptz
+  responseData          Json?     @map("response_data") // Any response from the target
+  aiGenerated           Boolean   @default(true) @map("ai_generated")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([linkedinPostId])
+  @@index([engagementType])
+  @@index([engagedAt])
+  @@map("linkedin_engagements")
+}
+
+// Agent activity logs
+model AgentActivity {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  agentName   String   @map("agent_name")
+  action      String
+  status      String   @default("success") // success, failed, pending
+  input       Json?
+  output      Json?
+  error       String?
+  duration    Int? // milliseconds
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([agentName])
+  @@index([createdAt])
+  @@map("agent_activities")
+}
+
+// News and market intelligence
+model NewsItem {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String
+  url         String   @unique
+  source      String
+  content     String?
+  summary     String?
+  sentiment   String? // positive, negative, neutral
+  relevance   Float? // 0-1 relevance score
+  keywords    String[]
+  publishedAt DateTime @map("published_at") @db.Timestamptz
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([publishedAt])
+  @@index([source])
+  @@index([relevance])
+  @@map("news_items")
+}
+
+// Trending topics
+model TrendingTopic {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  topic       String   @unique
+  category    String?
+  growthRate  Float    @map("growth_rate") // percentage growth
+  volume      Int? // mention count
+  sentiment   String? // positive, negative, neutral
+  sources     String[] // where it's trending
+  keywords    String[]
+  detectedAt  DateTime @default(now()) @map("detected_at") @db.Timestamptz
+  lastUpdated DateTime @updatedAt @map("last_updated") @db.Timestamptz
+
+  @@index([detectedAt])
+  @@index([growthRate])
+  @@map("trending_topics")
+}
+
+// System settings and configurations
+model SystemConfig {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key       String   @unique
+  value     Json
+  category  String? // ai, linkedin, news, etc.
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("system_configs")
+}
